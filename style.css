@@ -1,221 +1,49 @@
-:root{
-  --paper: #EDE0C0;
-  --paper-deep: #DCC99A;
-  --paper-card: #F5EEDA;
-  --ink: #2A2118;
-  --ink-soft: #6B5D47;
-  --stamp: #34507A;
-  --stamp-soft: #DCE3EC;
-  --crust: #B6722E;
-  --crust-soft: #F1DFC2;
-  --sage: #4F7553;
-  --sage-soft: #DCE7DC;
-  --rust: #A14C3A;
-  --rust-soft: #F0DAD2;
-  --line: rgba(42,33,24,0.18);
-  --shadow: 0 2px 0 rgba(42,33,24,0.06), 0 8px 20px -10px rgba(42,33,24,0.35);
-}
+-- Juachi Pan — esquema de base de datos para Supabase
+-- Pegá todo esto en: tu proyecto de Supabase > SQL Editor > New query > Run
 
-*{box-sizing:border-box;}
-body{
-  margin:0;
-  font-family:'IBM Plex Mono', monospace;
-  color:var(--ink);
-  background:
-    radial-gradient(circle at 1px 1px, rgba(42,33,24,0.05) 1px, transparent 0) 0 0/14px 14px,
-    var(--paper);
-  min-height:100vh;
-  padding:24px 16px 60px;
-}
+create extension if not exists "pgcrypto";
 
-.wrap{max-width:760px; margin:0 auto;}
+create table orders (
+  id uuid primary key default gen_random_uuid(),
+  cliente text not null,
+  pan text not null,
+  cantidad numeric not null,
+  precio numeric default 0,
+  fecha date not null,
+  notas text,
+  estado text not null default 'pendiente',
+  facturado boolean not null default false,
+  created_at timestamptz default now()
+);
 
-.cover{
-  background:var(--paper-deep);
-  border-radius:14px;
-  padding:22px 24px 18px;
-  box-shadow:var(--shadow);
-  border:1px solid var(--line);
-  position:relative;
-  overflow:hidden;
-  margin-bottom:18px;
-  display:flex;
-  justify-content:space-between;
-  align-items:flex-end;
-  gap:10px;
-}
-.cover::before{
-  content:"";
-  position:absolute; left:0; top:0; bottom:0; width:36px;
-  background-image: repeating-linear-gradient(to bottom, var(--ink) 0 2px, transparent 2px 14px);
-  opacity:0.15;
-}
-.cover h1{
-  font-family:'Fraunces', serif;
-  font-weight:700;
-  font-style:italic;
-  font-size:30px;
-  margin:0 0 2px 28px;
-  letter-spacing:0.2px;
-}
-.cover p{
-  margin:0 0 0 28px;
-  font-family:'Caveat', cursive;
-  font-size:19px;
-  color:var(--ink-soft);
-  font-weight:600;
-}
-.gear-btn{
-  background:none; border:none; cursor:pointer; font-size:20px;
-  color:var(--ink-soft); padding:6px; line-height:1;
-}
+create table expenses (
+  id uuid primary key default gen_random_uuid(),
+  insumo text not null,
+  monto numeric not null,
+  fecha date not null,
+  created_at timestamptz default now()
+);
 
-.tabs{display:flex; gap:6px; margin-bottom:16px;}
-.tab-btn{
-  font-family:'Fraunces', serif; font-weight:600; font-size:15px;
-  padding:10px 18px 9px; border:1px solid var(--line); border-bottom:none;
-  background:var(--paper-card); color:var(--ink-soft);
-  border-radius:10px 10px 0 0; cursor:pointer; position:relative; top:1px;
-}
-.tab-btn.active{ color:var(--ink); box-shadow: 0 -2px 0 var(--crust) inset; }
-.tab-btn:not(.active){opacity:0.7;}
+create table incomes (
+  id uuid primary key default gen_random_uuid(),
+  pan text not null,
+  cantidad numeric not null,
+  precio numeric not null,
+  total numeric not null,
+  fecha date not null,
+  created_at timestamptz default now()
+);
 
-.panel{
-  background:var(--paper-card); border:1px solid var(--line);
-  border-radius:0 10px 10px 10px; box-shadow:var(--shadow); padding:20px;
-}
-.hidden{display:none !important;}
+-- Habilitamos RLS y permitimos acceso completo con la clave anónima.
+-- Esto alcanza para un uso personal (vos sos el único que tiene el link y la clave),
+-- pero cualquiera que tenga tu "anon key" podría leer o escribir datos.
+-- Si vas a subir el código a un repositorio PÚBLICO de GitHub, tené en cuenta ese punto
+-- (lo explico también en el README).
 
-h2.section-title{
-  font-family:'Fraunces', serif; font-size:19px; font-weight:600;
-  margin:0 0 12px; display:flex; align-items:center; gap:8px;
-}
+alter table orders enable row level security;
+alter table expenses enable row level security;
+alter table incomes enable row level security;
 
-form.entry-form{
-  display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:18px;
-  padding:14px; background:var(--paper); border-radius:10px; border:1px dashed var(--line);
-}
-form.entry-form .full{grid-column:1/-1;}
-label{
-  font-size:11px; text-transform:uppercase; letter-spacing:0.06em;
-  color:var(--ink-soft); display:block; margin-bottom:4px; font-weight:500;
-}
-input, select{
-  width:100%; font-family:'IBM Plex Mono', monospace; font-size:14px;
-  padding:8px 10px; border-radius:7px; border:1px solid var(--line);
-  background:#fff; color:var(--ink);
-}
-input:focus, select:focus, button:focus-visible{ outline:2px solid var(--stamp); outline-offset:1px; }
-.form-actions{grid-column:1/-1; display:flex; gap:8px; align-items:center;}
-
-button{
-  font-family:'IBM Plex Mono', monospace; font-weight:600; font-size:13.5px;
-  border:none; border-radius:8px; padding:10px 16px; cursor:pointer; transition:transform .08s ease;
-}
-button:active{transform:scale(0.97);}
-.btn-primary{background:var(--stamp); color:#fff;}
-.btn-cancel{background:transparent; color:var(--ink-soft); text-decoration:underline; padding:10px 6px;}
-.btn-ghost{background:var(--crust-soft); color:var(--crust);}
-.btn-danger{background:transparent; color:var(--rust); font-size:12px; padding:4px 8px;}
-.btn-sage{background:var(--sage-soft); color:var(--sage);}
-
-.filter-row{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; align-items:center;}
-.chip{
-  font-size:12px; padding:6px 12px; border-radius:999px; background:var(--paper);
-  border:1px solid var(--line); color:var(--ink-soft); cursor:pointer;
-}
-.chip.active{background:var(--ink); color:var(--paper-card); border-color:var(--ink);}
-.search-input{max-width:220px; margin-left:auto;}
-
-.ticket{
-  background:var(--paper-card); border:1px solid var(--line); border-radius:10px;
-  padding:14px 14px 16px; margin-bottom:14px; position:relative;
-  box-shadow:0 1px 0 rgba(42,33,24,0.05);
-}
-.ticket::after{
-  content:""; position:absolute; left:0; right:0; bottom:-9px; height:10px;
-  background:
-    linear-gradient(135deg, transparent 50%, var(--paper) 50%) 0 0/10px 10px repeat-x,
-    linear-gradient(45deg, transparent 50%, var(--paper) 50%) 0 0/10px 10px repeat-x;
-}
-.ticket-top{display:flex; justify-content:space-between; align-items:flex-start; gap:10px;}
-.ticket-client{font-family:'Fraunces', serif; font-weight:600; font-size:17px;}
-.ticket-pan{color:var(--ink-soft); font-size:13.5px; margin-top:2px;}
-.ticket-meta{font-size:12px; color:var(--ink-soft); margin-top:8px; display:flex; gap:14px; flex-wrap:wrap;}
-.ticket-notes{font-family:'Caveat', cursive; font-size:16px; color:var(--ink-soft); margin-top:6px;}
-.ticket-total{font-family:'Fraunces', serif; font-weight:600; font-size:16px; color:var(--crust);}
-
-.stamp{
-  font-size:10.5px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase;
-  padding:5px 10px; border-radius:999px; border:2px solid currentColor;
-  transform:rotate(-4deg); display:inline-block; cursor:pointer; white-space:nowrap;
-}
-.stamp.pendiente{color:var(--rust); background:var(--rust-soft);}
-.stamp.entregado{color:var(--sage); background:var(--sage-soft);}
-
-.ticket-actions{display:flex; gap:10px; margin-top:10px; align-items:center; flex-wrap:wrap;}
-.ticket-actions button{font-size:12px; padding:6px 10px;}
-.link-btn{background:none; color:var(--ink-soft); text-decoration:underline; padding:4px 0; font-size:12px;}
-.registrada-tag{font-size:11px; color:var(--sage); font-weight:600;}
-
-.empty{
-  text-align:center; padding:30px 14px; color:var(--ink-soft);
-  font-family:'Caveat', cursive; font-size:19px; border:1px dashed var(--line); border-radius:10px;
-}
-
-.pan-breakdown{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px;}
-.pan-chip{
-  background:var(--paper); border:1px solid var(--line); border-radius:10px;
-  padding:9px 14px; min-width:120px;
-}
-.pan-chip .pname{font-family:'Fraunces', serif; font-weight:600; font-size:14px; color:var(--crust);}
-.pan-chip .pcount{color:var(--ink-soft); font-size:12px; margin-top:2px;}
-
-.finance-subtabs{display:flex; gap:6px; margin-bottom:16px;}
-.finance-subtabs .chip{font-size:13px; padding:7px 14px;}
-
-.summary-strip{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:18px;}
-.summary-card{border-radius:10px; padding:12px 14px; text-align:center; border:1px solid var(--line);}
-.summary-card .label{font-size:11px; text-transform:uppercase; letter-spacing:0.05em; opacity:0.75;}
-.summary-card .value{font-family:'Fraunces', serif; font-weight:700; font-size:21px; margin-top:4px;}
-.summary-card.gastos{background:var(--rust-soft); color:var(--rust);}
-.summary-card.ingresos{background:var(--sage-soft); color:var(--sage);}
-.summary-card.balance{background:var(--crust-soft); color:var(--crust);}
-
-table.ledger{width:100%; border-collapse:collapse; font-size:13.5px; margin-bottom:8px;}
-table.ledger th{
-  text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:0.04em;
-  color:var(--ink-soft); padding:6px 8px; border-bottom:1px solid var(--line);
-}
-table.ledger td{padding:8px 8px; border-bottom:1px dashed var(--line); vertical-align:top;}
-table.ledger tr:last-child td{border-bottom:none;}
-.num{font-family:'IBM Plex Mono', monospace; text-align:right; white-space:nowrap;}
-.row-del{color:var(--ink-soft); background:none; padding:2px 6px; font-size:14px;}
-
-.breakdown-title{font-family:'Fraunces', serif; font-weight:600; font-size:15px; margin:22px 0 8px;}
-
-/* ---------- Config modal ---------- */
-.modal-overlay{
-  position:fixed; inset:0; background:rgba(42,33,24,0.55);
-  display:flex; align-items:center; justify-content:center; padding:18px; z-index:50;
-}
-.modal{
-  background:var(--paper-card); border-radius:14px; padding:22px;
-  max-width:420px; width:100%; box-shadow:var(--shadow); border:1px solid var(--line);
-}
-.modal h2{font-family:'Fraunces', serif; margin:0 0 6px;}
-.modal p{font-size:13px; color:var(--ink-soft); line-height:1.5; margin:0 0 14px;}
-.modal label{margin-top:10px;}
-.modal input{margin-bottom:4px;}
-.modal-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:16px;}
-.status-msg{font-size:12px; margin-top:8px; min-height:16px;}
-.status-msg.error{color:var(--rust);}
-.status-msg.ok{color:var(--sage);}
-
-@media (max-width:520px){
-  form.entry-form{grid-template-columns:1fr;}
-  .summary-strip{grid-template-columns:1fr;}
-  .search-input{max-width:100%; margin-left:0;}
-  .filter-row{flex-direction:column; align-items:flex-start;}
-  .cover{flex-direction:column; align-items:flex-start;}
-}
+create policy "allow all orders" on orders for all using (true) with check (true);
+create policy "allow all expenses" on expenses for all using (true) with check (true);
+create policy "allow all incomes" on incomes for all using (true) with check (true);

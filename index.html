@@ -1,181 +1,434 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<title>Juachi Pan</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="manifest" href="manifest.json">
-<link rel="icon" href="icons/icon-192.png">
-<link rel="apple-touch-icon" href="icons/icon-180.png">
-<meta name="theme-color" content="#B6722E">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Juachi Pan">
-<meta name="mobile-web-app-capable" content="yes">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,500;1,9..144,600&family=IBM+Plex+Mono:wght@400;500;600&family=Caveat:wght@600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-</head>
-<body>
+(function () {
+  const fmt = (n) => '$' + (Number(n) || 0).toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  const todayStr = () => new Date().toISOString().slice(0, 10);
+  const fmtDate = (d) => { if (!d) return ''; const [y, m, day] = d.split('-'); return `${day}/${m}/${y}`; };
+  const escapeHtml = (str) => String(str).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
 
-<div class="wrap">
+  let supabase = null;
+  let orders = [], expenses = [], incomes = [];
+  let editingId = null;
+  let orderFilter = 'todos';
+  let searchTerm = '';
 
-  <div class="cover">
-    <div>
-      <h1>🥖 Juachi Pan</h1>
-      <p>pedidos, gastos y ganancias, todo en un mismo cuaderno</p>
-    </div>
-    <button class="gear-btn" id="open-config" title="Configuración">⚙️</button>
-  </div>
+  // ---------- Config (Supabase credentials, stored locally on this device) ----------
+  const cfgOverlay = document.getElementById('config-overlay');
+  const cfgUrl = document.getElementById('cfg-url');
+  const cfgKey = document.getElementById('cfg-key');
+  const cfgStatus = document.getElementById('cfg-status');
+  const cfgCancel = document.getElementById('cfg-cancel');
 
-  <div class="tabs">
-    <button class="tab-btn active" data-tab="pedidos">Pedidos</button>
-    <button class="tab-btn" data-tab="finanzas">Finanzas</button>
-  </div>
+  function getStoredConfig() {
+    return {
+      url: localStorage.getItem('juachi_supabase_url') || '',
+      key: localStorage.getItem('juachi_supabase_key') || ''
+    };
+  }
 
-  <!-- ===================== PEDIDOS ===================== -->
-  <div class="panel" id="tab-pedidos">
+  function openConfig(allowCancel) {
+    const cfg = getStoredConfig();
+    cfgUrl.value = cfg.url;
+    cfgKey.value = cfg.key;
+    cfgStatus.textContent = '';
+    cfgStatus.className = 'status-msg';
+    cfgCancel.classList.toggle('hidden', !allowCancel);
+    cfgOverlay.classList.remove('hidden');
+  }
+  function closeConfig() { cfgOverlay.classList.add('hidden'); }
 
-    <h2 class="section-title">📋 Nuevo pedido</h2>
-    <form class="entry-form" id="form-pedido">
-      <div>
-        <label for="p-cliente">Cliente</label>
-        <input type="text" id="p-cliente" placeholder="Nombre del cliente" required>
-      </div>
-      <div>
-        <label for="p-pan">Tipo de pan</label>
-        <input type="text" id="p-pan" placeholder="Pan de campo, baguette..." required>
-      </div>
-      <div>
-        <label for="p-cantidad">Cantidad</label>
-        <input type="number" id="p-cantidad" min="1" step="1" placeholder="0" required>
-      </div>
-      <div>
-        <label for="p-precio">Precio por unidad ($, opcional)</label>
-        <input type="number" id="p-precio" min="0" step="0.01" placeholder="0.00">
-      </div>
-      <div>
-        <label for="p-fecha">Fecha de entrega</label>
-        <input type="date" id="p-fecha" required>
-      </div>
-      <div>
-        <label for="p-notas">Notas (opcional)</label>
-        <input type="text" id="p-notas" placeholder="Sin sal, retira a la tarde...">
-      </div>
-      <div class="form-actions">
-        <button type="submit" class="btn-primary" id="p-submit-btn">Agregar pedido</button>
-        <button type="button" class="btn-cancel hidden" id="p-cancel-btn">Cancelar edición</button>
-      </div>
-    </form>
+  document.getElementById('open-config').addEventListener('click', () => openConfig(true));
+  cfgCancel.addEventListener('click', closeConfig);
 
-    <div class="filter-row">
-      <span class="chip active" data-filter="todos">Todos</span>
-      <span class="chip" data-filter="pendiente">Pendientes</span>
-      <span class="chip" data-filter="entregado">Entregados</span>
-      <input class="search-input" type="text" id="p-buscar" placeholder="Buscar cliente...">
-    </div>
+  document.getElementById('cfg-save').addEventListener('click', async () => {
+    const url = cfgUrl.value.trim();
+    const key = cfgKey.value.trim();
+    if (!url || !key) {
+      cfgStatus.textContent = 'Completá los dos campos.';
+      cfgStatus.className = 'status-msg error';
+      return;
+    }
+    cfgStatus.textContent = 'Conectando...';
+    cfgStatus.className = 'status-msg';
 
-    <div class="pan-breakdown" id="pedidos-breakdown"></div>
+    try {
+      const client = window.supabase.createClient(url, key);
+      const { error } = await client.from('orders').select('id').limit(1);
+      if (error) throw error;
 
-    <div id="pedidos-list"></div>
-  </div>
+      localStorage.setItem('juachi_supabase_url', url);
+      localStorage.setItem('juachi_supabase_key', key);
+      supabase = client;
+      cfgStatus.textContent = '¡Conectado!';
+      cfgStatus.className = 'status-msg ok';
+      setTimeout(async () => { closeConfig(); await loadAll(); }, 500);
+    } catch (e) {
+      cfgStatus.textContent = 'No se pudo conectar. Revisá la URL, la clave, y que hayas corrido el schema.sql en Supabase.';
+      cfgStatus.className = 'status-msg error';
+    }
+  });
 
-  <!-- ===================== FINANZAS ===================== -->
-  <div class="panel hidden" id="tab-finanzas">
+  async function initSupabase() {
+    const cfg = getStoredConfig();
+    if (!cfg.url || !cfg.key) {
+      openConfig(false);
+      return false;
+    }
+    supabase = window.supabase.createClient(cfg.url, cfg.key);
+    return true;
+  }
 
-    <div class="summary-strip">
-      <div class="summary-card gastos">
-        <div class="label">Gastado en insumos</div>
-        <div class="value" id="sum-gastos">$0</div>
-      </div>
-      <div class="summary-card ingresos">
-        <div class="label">Ganado en ventas</div>
-        <div class="value" id="sum-ingresos">$0</div>
-      </div>
-      <div class="summary-card balance">
-        <div class="label">Ganancia neta</div>
-        <div class="value" id="sum-balance">$0</div>
-      </div>
-    </div>
+  // ---------- Tabs ----------
+  document.querySelectorAll('.tab-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      const tab = btn.dataset.tab;
+      document.getElementById('tab-pedidos').classList.toggle('hidden', tab !== 'pedidos');
+      document.getElementById('tab-finanzas').classList.toggle('hidden', tab !== 'finanzas');
+    });
+  });
 
-    <div class="finance-subtabs">
-      <span class="chip active" data-fin="gastos">🧺 Gastos en insumos</span>
-      <span class="chip" data-fin="ingresos">💰 Ventas de pan</span>
-    </div>
+  document.querySelectorAll('.finance-subtabs .chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('.finance-subtabs .chip').forEach((c) => c.classList.remove('active'));
+      chip.classList.add('active');
+      const fin = chip.dataset.fin;
+      document.getElementById('fin-gastos').classList.toggle('hidden', fin !== 'gastos');
+      document.getElementById('fin-ingresos').classList.toggle('hidden', fin !== 'ingresos');
+    });
+  });
 
-    <div id="fin-gastos">
-      <form class="entry-form" id="form-gasto">
-        <div>
-          <label for="g-insumo">Insumo</label>
-          <input type="text" id="g-insumo" placeholder="Harina, levadura, gas..." required>
+  // ---------- Data loading ----------
+  async function loadAll() {
+    if (!supabase) return;
+    const [{ data: o, error: oe }, { data: g, error: ge }, { data: i, error: ie }] = await Promise.all([
+      supabase.from('orders').select('*').order('fecha', { ascending: true }),
+      supabase.from('expenses').select('*').order('fecha', { ascending: false }),
+      supabase.from('incomes').select('*').order('fecha', { ascending: false })
+    ]);
+    if (oe || ge || ie) {
+      console.error(oe, ge, ie);
+      return;
+    }
+    orders = o || [];
+    expenses = g || [];
+    incomes = i || [];
+    renderOrders();
+    renderFinance();
+  }
+
+  // ---------- Pedidos: form ----------
+  const formPedido = document.getElementById('form-pedido');
+  const pCancelBtn = document.getElementById('p-cancel-btn');
+  const pSubmitBtn = document.getElementById('p-submit-btn');
+  document.getElementById('p-fecha').value = todayStr();
+
+  formPedido.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!supabase) return;
+    const cliente = document.getElementById('p-cliente').value.trim();
+    const pan = document.getElementById('p-pan').value.trim();
+    const cantidad = parseFloat(document.getElementById('p-cantidad').value);
+    const precio = parseFloat(document.getElementById('p-precio').value) || 0;
+    const fecha = document.getElementById('p-fecha').value;
+    const notas = document.getElementById('p-notas').value.trim();
+    if (!cliente || !pan || !cantidad || !fecha) return;
+
+    if (editingId) {
+      const { error } = await supabase.from('orders')
+        .update({ cliente, pan, cantidad, precio, fecha, notas })
+        .eq('id', editingId);
+      if (error) { console.error(error); return; }
+      editingId = null;
+      pSubmitBtn.textContent = 'Agregar pedido';
+      pCancelBtn.classList.add('hidden');
+    } else {
+      const { error } = await supabase.from('orders')
+        .insert({ cliente, pan, cantidad, precio, fecha, notas, estado: 'pendiente', facturado: false });
+      if (error) { console.error(error); return; }
+    }
+    formPedido.reset();
+    document.getElementById('p-fecha').value = todayStr();
+    await loadAll();
+  });
+
+  pCancelBtn.addEventListener('click', () => {
+    editingId = null;
+    formPedido.reset();
+    document.getElementById('p-fecha').value = todayStr();
+    pSubmitBtn.textContent = 'Agregar pedido';
+    pCancelBtn.classList.add('hidden');
+  });
+
+  document.querySelectorAll('.filter-row .chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('.filter-row .chip').forEach((c) => c.classList.remove('active'));
+      chip.classList.add('active');
+      orderFilter = chip.dataset.filter;
+      renderOrders();
+    });
+  });
+
+  document.getElementById('p-buscar').addEventListener('input', (e) => {
+    searchTerm = e.target.value.trim().toLowerCase();
+    renderOrders();
+  });
+
+  function renderOrders() {
+    const list = document.getElementById('pedidos-list');
+    let items = [...orders];
+    if (orderFilter !== 'todos') items = items.filter((o) => o.estado === orderFilter);
+    if (searchTerm) items = items.filter((o) => o.cliente.toLowerCase().includes(searchTerm));
+    items.sort((a, b) => a.fecha.localeCompare(b.fecha));
+
+    if (items.length === 0) {
+      list.innerHTML = `<div class="empty">Todavía no hay pedidos acá. Agregá el primero arriba 🥐</div>`;
+      return;
+    }
+
+    list.innerHTML = items.map((o) => {
+      const total = o.precio ? o.precio * o.cantidad : null;
+      return `
+      <div class="ticket" data-id="${o.id}">
+        <div class="ticket-top">
+          <div>
+            <div class="ticket-client">${escapeHtml(o.cliente)}</div>
+            <div class="ticket-pan">${o.cantidad} × ${escapeHtml(o.pan)}</div>
+          </div>
+          <span class="stamp ${o.estado}" data-action="toggle-estado">${o.estado === 'pendiente' ? 'Pendiente' : 'Entregado'}</span>
         </div>
-        <div>
-          <label for="g-monto">Monto ($)</label>
-          <input type="number" id="g-monto" min="0" step="0.01" placeholder="0.00" required>
+        <div class="ticket-meta">
+          <span>📅 Entrega: ${fmtDate(o.fecha)}</span>
+          ${total !== null ? `<span class="ticket-total">${fmt(total)}</span>` : ''}
         </div>
-        <div>
-          <label for="g-fecha">Fecha</label>
-          <input type="date" id="g-fecha" required>
+        ${o.notas ? `<div class="ticket-notes">"${escapeHtml(o.notas)}"</div>` : ''}
+        <div class="ticket-actions">
+          <button class="link-btn" data-action="edit">Editar</button>
+          <button class="btn-danger" data-action="delete">Eliminar</button>
+          ${o.estado === 'entregado' && total !== null && !o.facturado ? `<button class="btn-sage" data-action="registrar-venta" style="font-size:12px;padding:6px 10px;">Registrar venta en Finanzas</button>` : ''}
+          ${o.facturado ? `<span class="registrada-tag">✓ venta registrada</span>` : ''}
         </div>
-        <div class="form-actions">
-          <button type="submit" class="btn-ghost">Registrar gasto</button>
-        </div>
-      </form>
-      <div id="gastos-list"></div>
-    </div>
+      </div>`;
+    }).join('');
 
-    <div id="fin-ingresos" class="hidden">
-      <div class="breakdown-title" style="margin-top:0;">Vendido por tipo de pan</div>
-      <div class="pan-breakdown" id="ventas-breakdown"></div>
+    list.querySelectorAll('.ticket').forEach((card) => {
+      const id = card.dataset.id;
+      const ord = orders.find((o) => o.id === id);
 
-      <form class="entry-form" id="form-ingreso">
-        <div>
-          <label for="i-pan">Tipo de pan vendido</label>
-          <input type="text" id="i-pan" placeholder="Pan de campo, baguette..." list="pan-types-list" required>
-          <datalist id="pan-types-list"></datalist>
-        </div>
-        <div>
-          <label for="i-cantidad">Cantidad</label>
-          <input type="number" id="i-cantidad" min="1" step="1" placeholder="0" required>
-        </div>
-        <div>
-          <label for="i-precio">Precio por unidad ($)</label>
-          <input type="number" id="i-precio" min="0" step="0.01" placeholder="0.00" required>
-        </div>
-        <div>
-          <label for="i-fecha">Fecha</label>
-          <input type="date" id="i-fecha" required>
-        </div>
-        <div class="form-actions">
-          <button type="submit" class="btn-sage">Registrar venta</button>
-        </div>
-      </form>
-      <div id="ingresos-list"></div>
-    </div>
+      card.querySelector('[data-action="toggle-estado"]').addEventListener('click', async () => {
+        const nuevoEstado = ord.estado === 'pendiente' ? 'entregado' : 'pendiente';
+        const { error } = await supabase.from('orders').update({ estado: nuevoEstado }).eq('id', id);
+        if (!error) await loadAll();
+      });
 
-  </div>
+      card.querySelector('[data-action="delete"]').addEventListener('click', async () => {
+        const { error } = await supabase.from('orders').delete().eq('id', id);
+        if (!error) await loadAll();
+      });
 
-</div>
+      card.querySelector('[data-action="edit"]').addEventListener('click', () => {
+        editingId = id;
+        document.getElementById('p-cliente').value = ord.cliente;
+        document.getElementById('p-pan').value = ord.pan;
+        document.getElementById('p-cantidad').value = ord.cantidad;
+        document.getElementById('p-precio').value = ord.precio || '';
+        document.getElementById('p-fecha').value = ord.fecha;
+        document.getElementById('p-notas').value = ord.notas || '';
+        pSubmitBtn.textContent = 'Guardar cambios';
+        pCancelBtn.classList.remove('hidden');
+        document.getElementById('tab-pedidos').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
 
-<!-- ===================== CONFIG MODAL ===================== -->
-<div class="modal-overlay hidden" id="config-overlay">
-  <div class="modal">
-    <h2>Conectar con Supabase</h2>
-    <p>Pegá la URL y la "anon key" de tu proyecto de Supabase (las encontrás en
-    Project Settings → API). Quedan guardadas solo en este navegador/dispositivo.</p>
-    <label for="cfg-url">Project URL</label>
-    <input type="text" id="cfg-url" placeholder="https://xxxxx.supabase.co">
-    <label for="cfg-key">Anon public key</label>
-    <input type="text" id="cfg-key" placeholder="eyJhbGciOi...">
-    <div class="status-msg" id="cfg-status"></div>
-    <div class="modal-actions">
-      <button type="button" class="btn-cancel hidden" id="cfg-cancel">Cancelar</button>
-      <button type="button" class="btn-primary" id="cfg-save">Guardar y conectar</button>
-    </div>
-  </div>
-</div>
+      const ventaBtn = card.querySelector('[data-action="registrar-venta"]');
+      if (ventaBtn) {
+        ventaBtn.addEventListener('click', async () => {
+          const total = ord.precio * ord.cantidad;
+          const { error: e1 } = await supabase.from('incomes').insert({
+            pan: ord.pan, cantidad: ord.cantidad, precio: ord.precio, total, fecha: ord.fecha
+          });
+          if (e1) { console.error(e1); return; }
+          const { error: e2 } = await supabase.from('orders').update({ facturado: true }).eq('id', id);
+          if (e2) { console.error(e2); return; }
+          await loadAll();
+        });
+      }
+    });
 
-<script src="app.js"></script>
-</body>
-</html>
+    renderPedidosBreakdown();
+  }
+
+  function renderPedidosBreakdown() {
+    const div = document.getElementById('pedidos-breakdown');
+    if (!div) return;
+    const byPan = {};
+    orders.forEach((o) => {
+      const key = o.pan.trim();
+      if (!byPan[key]) byPan[key] = { pedidos: 0, cantidad: 0 };
+      byPan[key].pedidos += 1;
+      byPan[key].cantidad += Number(o.cantidad);
+    });
+    const keys = Object.keys(byPan).sort((a, b) => byPan[b].cantidad - byPan[a].cantidad);
+    if (keys.length === 0) { div.innerHTML = ''; return; }
+    div.innerHTML = keys.map((k) => `
+      <div class="pan-chip">
+        <div class="pname">${escapeHtml(k)}</div>
+        <div class="pcount">${byPan[k].pedidos} pedido${byPan[k].pedidos !== 1 ? 's' : ''} · ${byPan[k].cantidad} panes</div>
+      </div>`).join('');
+  }
+
+  // ---------- Gastos ----------
+  const formGasto = document.getElementById('form-gasto');
+  document.getElementById('g-fecha').value = todayStr();
+
+  formGasto.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!supabase) return;
+    const insumo = document.getElementById('g-insumo').value.trim();
+    const monto = parseFloat(document.getElementById('g-monto').value);
+    const fecha = document.getElementById('g-fecha').value;
+    if (!insumo || !monto || !fecha) return;
+    const { error } = await supabase.from('expenses').insert({ insumo, monto, fecha });
+    if (error) { console.error(error); return; }
+    formGasto.reset();
+    document.getElementById('g-fecha').value = todayStr();
+    await loadAll();
+  });
+
+  // ---------- Ingresos ----------
+  const formIngreso = document.getElementById('form-ingreso');
+  const iPanInput = document.getElementById('i-pan');
+  const iPrecioInput = document.getElementById('i-precio');
+  document.getElementById('i-fecha').value = todayStr();
+
+  // Cuando escribís el tipo de pan, busca el precio usado en pedidos con ese mismo pan
+  // (el más reciente) y lo completa solo, salvo que ya hayas escrito un precio a mano.
+  let precioAutocompletado = true;
+  iPrecioInput.addEventListener('input', () => { precioAutocompletado = false; });
+
+  iPanInput.addEventListener('input', () => {
+    const term = iPanInput.value.trim().toLowerCase();
+    if (!term) return;
+    const matches = orders
+      .filter((o) => o.pan.trim().toLowerCase() === term && o.precio)
+      .sort((a, b) => b.fecha.localeCompare(a.fecha));
+    if (matches.length > 0 && (precioAutocompletado || !iPrecioInput.value)) {
+      iPrecioInput.value = matches[0].precio;
+      precioAutocompletado = true;
+    }
+  });
+
+  formIngreso.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!supabase) return;
+    const pan = document.getElementById('i-pan').value.trim();
+    const cantidad = parseFloat(document.getElementById('i-cantidad').value);
+    const precio = parseFloat(document.getElementById('i-precio').value);
+    const fecha = document.getElementById('i-fecha').value;
+    if (!pan || !cantidad || !precio || !fecha) return;
+    const { error } = await supabase.from('incomes').insert({ pan, cantidad, precio, fecha, total: cantidad * precio });
+    if (error) { console.error(error); return; }
+    formIngreso.reset();
+    document.getElementById('i-fecha').value = todayStr();
+    precioAutocompletado = true;
+    await loadAll();
+  });
+
+  function renderFinance() {
+    const gastosList = document.getElementById('gastos-list');
+    const sortedGastos = [...expenses].sort((a, b) => b.fecha.localeCompare(a.fecha));
+    if (sortedGastos.length === 0) {
+      gastosList.innerHTML = `<div class="empty">Sin gastos registrados todavía.</div>`;
+    } else {
+      gastosList.innerHTML = `
+        <table class="ledger">
+          <thead><tr><th>Fecha</th><th>Insumo</th><th class="num">Monto</th><th></th></tr></thead>
+          <tbody>
+            ${sortedGastos.map((g) => `
+              <tr data-id="${g.id}">
+                <td>${fmtDate(g.fecha)}</td>
+                <td>${escapeHtml(g.insumo)}</td>
+                <td class="num">${fmt(g.monto)}</td>
+                <td><button class="row-del" data-del-gasto="${g.id}">✕</button></td>
+              </tr>`).join('')}
+          </tbody>
+        </table>`;
+      gastosList.querySelectorAll('[data-del-gasto]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const { error } = await supabase.from('expenses').delete().eq('id', btn.dataset.delGasto);
+          if (!error) await loadAll();
+        });
+      });
+    }
+
+    const ingresosList = document.getElementById('ingresos-list');
+    const sortedIngresos = [...incomes].sort((a, b) => b.fecha.localeCompare(a.fecha));
+    if (sortedIngresos.length === 0) {
+      ingresosList.innerHTML = `<div class="empty">Sin ventas registradas todavía.</div>`;
+    } else {
+      ingresosList.innerHTML = `
+        <table class="ledger">
+          <thead><tr><th>Fecha</th><th>Pan</th><th class="num">Cant.</th><th class="num">Total</th><th></th></tr></thead>
+          <tbody>
+            ${sortedIngresos.map((i) => `
+              <tr data-id="${i.id}">
+                <td>${fmtDate(i.fecha)}</td>
+                <td>${escapeHtml(i.pan)}</td>
+                <td class="num">${i.cantidad}</td>
+                <td class="num">${fmt(i.total)}</td>
+                <td><button class="row-del" data-del-ingreso="${i.id}">✕</button></td>
+              </tr>`).join('')}
+          </tbody>
+        </table>`;
+      ingresosList.querySelectorAll('[data-del-ingreso]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const { error } = await supabase.from('incomes').delete().eq('id', btn.dataset.delIngreso);
+          if (!error) await loadAll();
+        });
+      });
+    }
+
+    const breakdownDiv = document.getElementById('ventas-breakdown');
+    const byPan = {};
+    incomes.forEach((i) => {
+      const key = i.pan.trim();
+      if (!byPan[key]) byPan[key] = { cantidad: 0, total: 0 };
+      byPan[key].cantidad += Number(i.cantidad);
+      byPan[key].total += Number(i.total);
+    });
+    const panKeys = Object.keys(byPan).sort((a, b) => byPan[b].cantidad - byPan[a].cantidad);
+    breakdownDiv.innerHTML = panKeys.length === 0
+      ? `<div class="empty" style="width:100%;">Todavía no registraste ventas.</div>`
+      : panKeys.map((k) => `
+        <div class="pan-chip">
+          <div class="pname">${escapeHtml(k)}</div>
+          <div class="pcount">${byPan[k].cantidad} vendidos · ${fmt(byPan[k].total)}</div>
+        </div>`).join('');
+
+    // Datalist con los tipos de pan ya usados (en pedidos o ventas), para autocompletar
+    const panTypes = new Set([
+      ...orders.map((o) => o.pan.trim()),
+      ...incomes.map((i) => i.pan.trim())
+    ]);
+    const datalist = document.getElementById('pan-types-list');
+    if (datalist) {
+      datalist.innerHTML = [...panTypes].map((p) => `<option value="${escapeHtml(p)}">`).join('');
+    }
+
+    const totalGastos = expenses.reduce((s, g) => s + Number(g.monto), 0);
+    const totalIngresos = incomes.reduce((s, i) => s + Number(i.total), 0);
+    document.getElementById('sum-gastos').textContent = fmt(totalGastos);
+    document.getElementById('sum-ingresos').textContent = fmt(totalIngresos);
+    document.getElementById('sum-balance').textContent = fmt(totalIngresos - totalGastos);
+  }
+
+  // ---------- Boot ----------
+  (async () => {
+    const ready = await initSupabase();
+    if (ready) await loadAll();
+  })();
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
+})();
