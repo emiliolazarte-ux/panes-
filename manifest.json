@@ -1,16 +1,183 @@
-{
-  "name": "Juachi Pan",
-  "short_name": "Juachi Pan",
-  "description": "Registro de pedidos, gastos e ingresos de la panadería",
-  "start_url": "./",
-  "scope": "./",
-  "display": "standalone",
-  "background_color": "#EDE0C0",
-  "theme_color": "#B6722E",
-  "orientation": "portrait",
-  "icons": [
-    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
-  ]
-}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Juachi Pan</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta name="theme-color" content="#B6722E">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Juachi Pan">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,500;1,9..144,600&family=IBM+Plex+Mono:wght@400;500;600&family=Caveat:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<div class="wrap">
+
+  <div class="cover">
+    <div>
+      <h1>🥖 Juachi Pan</h1>
+      <p>pedidos, gastos y ganancias, todo en un mismo cuaderno</p>
+    </div>
+    <button class="gear-btn" id="open-config" title="Configuración">⚙️</button>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="pedidos">Pedidos</button>
+    <button class="tab-btn" data-tab="finanzas">Finanzas</button>
+  </div>
+
+  <!-- ===================== PEDIDOS ===================== -->
+  <div class="panel" id="tab-pedidos">
+
+    <h2 class="section-title">📋 Nuevo pedido</h2>
+    <form class="entry-form" id="form-pedido">
+      <div>
+        <label for="p-cliente">Cliente</label>
+        <input type="text" id="p-cliente" placeholder="Nombre del cliente" required>
+      </div>
+      <div>
+        <label for="p-pan">Tipo de pan</label>
+        <input type="text" id="p-pan" placeholder="Pan de campo, baguette..." required>
+      </div>
+      <div>
+        <label for="p-cantidad">Cantidad</label>
+        <input type="number" id="p-cantidad" min="1" step="1" placeholder="0" required>
+      </div>
+      <div>
+        <label for="p-precio">Precio por unidad ($, opcional)</label>
+        <input type="number" id="p-precio" min="0" step="0.01" placeholder="0.00">
+      </div>
+      <div>
+        <label for="p-fecha">Fecha de entrega</label>
+        <input type="date" id="p-fecha" required>
+      </div>
+      <div>
+        <label for="p-notas">Notas (opcional)</label>
+        <input type="text" id="p-notas" placeholder="Sin sal, retira a la tarde...">
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn-primary" id="p-submit-btn">Agregar pedido</button>
+        <button type="button" class="btn-cancel hidden" id="p-cancel-btn">Cancelar edición</button>
+      </div>
+    </form>
+
+    <div class="filter-row">
+      <span class="chip active" data-filter="todos">Todos</span>
+      <span class="chip" data-filter="pendiente">Pendientes</span>
+      <span class="chip" data-filter="entregado">Entregados</span>
+      <input class="search-input" type="text" id="p-buscar" placeholder="Buscar cliente...">
+    </div>
+
+    <div class="pan-breakdown" id="pedidos-breakdown"></div>
+
+    <div id="pedidos-list"></div>
+  </div>
+
+  <!-- ===================== FINANZAS ===================== -->
+  <div class="panel hidden" id="tab-finanzas">
+
+    <div class="summary-strip">
+      <div class="summary-card gastos">
+        <div class="label">Gastado en insumos</div>
+        <div class="value" id="sum-gastos">$0</div>
+      </div>
+      <div class="summary-card ingresos">
+        <div class="label">Ganado en ventas</div>
+        <div class="value" id="sum-ingresos">$0</div>
+      </div>
+      <div class="summary-card balance">
+        <div class="label">Ganancia neta</div>
+        <div class="value" id="sum-balance">$0</div>
+      </div>
+    </div>
+
+    <div class="finance-subtabs">
+      <span class="chip active" data-fin="gastos">🧺 Gastos en insumos</span>
+      <span class="chip" data-fin="ingresos">💰 Ventas de pan</span>
+    </div>
+
+    <div id="fin-gastos">
+      <form class="entry-form" id="form-gasto">
+        <div>
+          <label for="g-insumo">Insumo</label>
+          <input type="text" id="g-insumo" placeholder="Harina, levadura, gas..." required>
+        </div>
+        <div>
+          <label for="g-monto">Monto ($)</label>
+          <input type="number" id="g-monto" min="0" step="0.01" placeholder="0.00" required>
+        </div>
+        <div>
+          <label for="g-fecha">Fecha</label>
+          <input type="date" id="g-fecha" required>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn-ghost">Registrar gasto</button>
+        </div>
+      </form>
+      <div id="gastos-list"></div>
+    </div>
+
+    <div id="fin-ingresos" class="hidden">
+      <form class="entry-form" id="form-ingreso">
+        <div>
+          <label for="i-pan">Tipo de pan vendido</label>
+          <input type="text" id="i-pan" placeholder="Pan de campo, baguette..." required>
+        </div>
+        <div>
+          <label for="i-cantidad">Cantidad</label>
+          <input type="number" id="i-cantidad" min="1" step="1" placeholder="0" required>
+        </div>
+        <div>
+          <label for="i-precio">Precio por unidad ($)</label>
+          <input type="number" id="i-precio" min="0" step="0.01" placeholder="0.00" required>
+        </div>
+        <div>
+          <label for="i-fecha">Fecha</label>
+          <input type="date" id="i-fecha" required>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn-sage">Registrar venta</button>
+        </div>
+      </form>
+      <div id="ingresos-list"></div>
+
+      <div class="breakdown-title">Ganancia por tipo de pan</div>
+      <table class="ledger" id="breakdown-table">
+        <thead><tr><th>Pan</th><th class="num">Vendidos</th><th class="num">Ingreso</th></tr></thead>
+        <tbody id="breakdown-body"></tbody>
+      </table>
+    </div>
+
+  </div>
+
+</div>
+
+<!-- ===================== CONFIG MODAL ===================== -->
+<div class="modal-overlay hidden" id="config-overlay">
+  <div class="modal">
+    <h2>Conectar con Supabase</h2>
+    <p>Pegá la URL y la "anon key" de tu proyecto de Supabase (las encontrás en
+    Project Settings → API). Quedan guardadas solo en este navegador/dispositivo.</p>
+    <label for="cfg-url">Project URL</label>
+    <input type="text" id="cfg-url" placeholder="https://xxxxx.supabase.co">
+    <label for="cfg-key">Anon public key</label>
+    <input type="text" id="cfg-key" placeholder="eyJhbGciOi...">
+    <div class="status-msg" id="cfg-status"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn-cancel hidden" id="cfg-cancel">Cancelar</button>
+      <button type="button" class="btn-primary" id="cfg-save">Guardar y conectar</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
