@@ -126,10 +126,14 @@
     </div>
 
     <div id="fin-ingresos" class="hidden">
+      <div class="breakdown-title" style="margin-top:0;">Vendido por tipo de pan</div>
+      <div class="pan-breakdown" id="ventas-breakdown"></div>
+
       <form class="entry-form" id="form-ingreso">
         <div>
           <label for="i-pan">Tipo de pan vendido</label>
-          <input type="text" id="i-pan" placeholder="Pan de campo, baguette..." required>
+          <input type="text" id="i-pan" placeholder="Pan de campo, baguette..." list="pan-types-list" required>
+          <datalist id="pan-types-list"></datalist>
         </div>
         <div>
           <label for="i-cantidad">Cantidad</label>
@@ -148,12 +152,6 @@
         </div>
       </form>
       <div id="ingresos-list"></div>
-
-      <div class="breakdown-title">Ganancia por tipo de pan</div>
-      <table class="ledger" id="breakdown-table">
-        <thead><tr><th>Pan</th><th class="num">Vendidos</th><th class="num">Ingreso</th></tr></thead>
-        <tbody id="breakdown-body"></tbody>
-      </table>
     </div>
 
   </div>

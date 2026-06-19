@@ -295,7 +295,26 @@
 
   // ---------- Ingresos ----------
   const formIngreso = document.getElementById('form-ingreso');
+  const iPanInput = document.getElementById('i-pan');
+  const iPrecioInput = document.getElementById('i-precio');
   document.getElementById('i-fecha').value = todayStr();
+
+  // Cuando escribís el tipo de pan, busca el precio usado en pedidos con ese mismo pan
+  // (el más reciente) y lo completa solo, salvo que ya hayas escrito un precio a mano.
+  let precioAutocompletado = true;
+  iPrecioInput.addEventListener('input', () => { precioAutocompletado = false; });
+
+  iPanInput.addEventListener('input', () => {
+    const term = iPanInput.value.trim().toLowerCase();
+    if (!term) return;
+    const matches = orders
+      .filter((o) => o.pan.trim().toLowerCase() === term && o.precio)
+      .sort((a, b) => b.fecha.localeCompare(a.fecha));
+    if (matches.length > 0 && (precioAutocompletado || !iPrecioInput.value)) {
+      iPrecioInput.value = matches[0].precio;
+      precioAutocompletado = true;
+    }
+  });
 
   formIngreso.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -309,6 +328,7 @@
     if (error) { console.error(error); return; }
     formIngreso.reset();
     document.getElementById('i-fecha').value = todayStr();
+    precioAutocompletado = true;
     await loadAll();
   });
 
@@ -366,7 +386,7 @@
       });
     }
 
-    const breakdownBody = document.getElementById('breakdown-body');
+    const breakdownDiv = document.getElementById('ventas-breakdown');
     const byPan = {};
     incomes.forEach((i) => {
       const key = i.pan.trim();
@@ -374,15 +394,24 @@
       byPan[key].cantidad += Number(i.cantidad);
       byPan[key].total += Number(i.total);
     });
-    const panKeys = Object.keys(byPan).sort((a, b) => byPan[b].total - byPan[a].total);
-    breakdownBody.innerHTML = panKeys.length === 0
-      ? `<tr><td colspan="3" style="color:var(--ink-soft);">Sin datos todavía.</td></tr>`
+    const panKeys = Object.keys(byPan).sort((a, b) => byPan[b].cantidad - byPan[a].cantidad);
+    breakdownDiv.innerHTML = panKeys.length === 0
+      ? `<div class="empty" style="width:100%;">Todavía no registraste ventas.</div>`
       : panKeys.map((k) => `
-        <tr>
-          <td>${escapeHtml(k)}</td>
-          <td class="num">${byPan[k].cantidad}</td>
-          <td class="num">${fmt(byPan[k].total)}</td>
-        </tr>`).join('');
+        <div class="pan-chip">
+          <div class="pname">${escapeHtml(k)}</div>
+          <div class="pcount">${byPan[k].cantidad} vendidos · ${fmt(byPan[k].total)}</div>
+        </div>`).join('');
+
+    // Datalist con los tipos de pan ya usados (en pedidos o ventas), para autocompletar
+    const panTypes = new Set([
+      ...orders.map((o) => o.pan.trim()),
+      ...incomes.map((i) => i.pan.trim())
+    ]);
+    const datalist = document.getElementById('pan-types-list');
+    if (datalist) {
+      datalist.innerHTML = [...panTypes].map((p) => `<option value="${escapeHtml(p)}">`).join('');
+    }
 
     const totalGastos = expenses.reduce((s, g) => s + Number(g.monto), 0);
     const totalIngresos = incomes.reduce((s, i) => s + Number(i.total), 0);
